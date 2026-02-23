@@ -1060,14 +1060,42 @@ func (s *Server) handlePlayPacket(player *Player, pkt *protocol.Packet) {
 			return
 		}
 
+		// Determine if the item is a door and map to its block ID
+		var isDoor bool
+		var placedBlockID int16 = itemID
+
+		switch itemID {
+		case 324:
+			placedBlockID = 64
+			isDoor = true
+		case 330:
+			placedBlockID = 71
+			isDoor = true
+		case 427:
+			placedBlockID = 193
+			isDoor = true
+		case 428:
+			placedBlockID = 194
+			isDoor = true
+		case 429:
+			placedBlockID = 195
+			isDoor = true
+		case 430:
+			placedBlockID = 196
+			isDoor = true
+		case 431:
+			placedBlockID = 197
+			isDoor = true
+		}
+
 		// Don't place air
-		if itemID <= 0 || itemID > 255 {
+		if placedBlockID <= 0 || placedBlockID > 255 {
 			// Abort placement, but we MUST resync the slot so the client doesn't
 			// think they successfully placed it and temporarily lose the item visually.
 			player.mu.Lock()
 			slotIndex := 36 + player.ActiveSlot
 			slot := player.Inventory[slotIndex]
-			log.Printf("Aborting place for item %d. Server thinks active slot %d (index %d) has item %d:%d qty %d", itemID, player.ActiveSlot, slotIndex, slot.ItemID, slot.Damage, slot.Count)
+			log.Printf("Aborting place for item %d (mapped to %d). Server thinks active slot %d (index %d) has item %d:%d qty %d", itemID, placedBlockID, player.ActiveSlot, slotIndex, slot.ItemID, slot.Damage, slot.Count)
 			pkt := protocol.MarshalPacket(0x2F, func(w *bytes.Buffer) {
 				protocol.WriteByte(w, 0) // Window ID 0 = player inventory
 				protocol.WriteInt16(w, int16(slotIndex))
@@ -1117,34 +1145,6 @@ func (s *Server) handlePlayPacket(player *Player, pkt *protocol.Packet) {
 			}
 			player.mu.Unlock()
 			return
-		}
-
-		// Determine if the item is a door and map to its block ID
-		var isDoor bool
-		var placedBlockID int16 = itemID
-
-		switch itemID {
-		case 324:
-			placedBlockID = 64
-			isDoor = true
-		case 330:
-			placedBlockID = 71
-			isDoor = true
-		case 427:
-			placedBlockID = 193
-			isDoor = true
-		case 428:
-			placedBlockID = 194
-			isDoor = true
-		case 429:
-			placedBlockID = 195
-			isDoor = true
-		case 430:
-			placedBlockID = 196
-			isDoor = true
-		case 431:
-			placedBlockID = 197
-			isDoor = true
 		}
 
 		if isDoor {
