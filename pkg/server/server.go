@@ -1045,8 +1045,8 @@ func (s *Server) handlePlayPacket(player *Player, pkt *protocol.Packet) {
 			return
 		}
 
-		// Flower pot (390:0) triggers castle generation
-		if itemID == 390 && damage == 0 {
+		// Jukebox (84:0) triggers castle generation
+		if itemID == 84 && damage == 0 {
 			tx, ty, tz := faceOffset(x, y, z, face)
 
 			// Consume the item in survival mode
@@ -1104,7 +1104,7 @@ func (s *Server) handlePlayPacket(player *Player, pkt *protocol.Packet) {
 				}
 			}
 
-			log.Printf("Player %s placed a flower pot at (%d, %d, %d) — generating castle (%d blocks)", player.Username, tx, ty, tz, len(castleBlocks))
+			log.Printf("Player %s placed a jukebox at (%d, %d, %d) — generating castle (%d blocks)", player.Username, tx, ty, tz, len(castleBlocks))
 			return
 		}
 
