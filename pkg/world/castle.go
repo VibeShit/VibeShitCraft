@@ -615,8 +615,6 @@ func GenerateCastle(ox, oy, oz int) []CastleBlock {
 	for i := -outerR - moatW; i <= outerR+moatW; i++ {
 		for w := 1; w <= moatW; w++ {
 			outerEdge := outerR + w
-			// Only place moat where it's outside the wall
-			isCorner := (i < -outerR || i > outerR)
 
 			// North moat
 			place(ox+i, oy-1, oz-outerEdge, waterSrc)
@@ -632,8 +630,6 @@ func GenerateCastle(ox, oy, oz int) []CastleBlock {
 			// East moat
 			place(ox+outerEdge, oy-1, oz+i, waterSrc)
 			place(ox+outerEdge, oy, oz+i, waterSrc)
-
-			_ = isCorner
 		}
 	}
 
