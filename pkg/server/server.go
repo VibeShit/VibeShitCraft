@@ -1045,6 +1045,69 @@ func (s *Server) handlePlayPacket(player *Player, pkt *protocol.Packet) {
 			return
 		}
 
+		// Flower pot (390:0) triggers castle generation
+		if itemID == 390 && damage == 0 {
+			tx, ty, tz := faceOffset(x, y, z, face)
+
+			// Consume the item in survival mode
+			if player.GameMode == GameModeSurvival {
+				player.mu.Lock()
+				slotIndex := 36 + player.ActiveSlot
+				player.Inventory[slotIndex].Count--
+				if player.Inventory[slotIndex].Count <= 0 {
+					player.Inventory[slotIndex] = Slot{ItemID: -1}
+				}
+				sl := player.Inventory[slotIndex]
+				syncPkt := protocol.MarshalPacket(0x2F, func(w *bytes.Buffer) {
+					protocol.WriteByte(w, 0)
+					protocol.WriteInt16(w, int16(slotIndex))
+					protocol.WriteSlotData(w, sl.ItemID, sl.Count, sl.Damage)
+				})
+				if player.Conn != nil {
+					protocol.WritePacket(player.Conn, syncPkt)
+				}
+				player.mu.Unlock()
+			}
+
+			// Generate the castle and place all blocks in the world
+			castleBlocks := world.GenerateCastle(int(tx), int(ty), int(tz))
+			affectedChunks := make(map[ChunkPos]bool)
+			for _, b := range castleBlocks {
+				s.world.SetBlock(b.X, b.Y, b.Z, b.State)
+				affectedChunks[ChunkPos{b.X >> 4, b.Z >> 4}] = true
+			}
+
+			// Resend affected chunks to all players instead of individual block updates
+			s.mu.RLock()
+			players := make([]*Player, 0, len(s.players))
+			for _, p := range s.players {
+				players = append(players, p)
+			}
+			s.mu.RUnlock()
+
+			for cp := range affectedChunks {
+				chunkData, primaryBitMask := s.world.GetChunkData(cp.X, cp.Z)
+				pkt := protocol.MarshalPacket(0x21, func(w *bytes.Buffer) {
+					protocol.WriteInt32(w, cp.X)
+					protocol.WriteInt32(w, cp.Z)
+					protocol.WriteBool(w, true)
+					protocol.WriteUint16(w, primaryBitMask)
+					protocol.WriteVarInt(w, int32(len(chunkData)))
+					w.Write(chunkData)
+				})
+				for _, p := range players {
+					p.mu.Lock()
+					if p.Conn != nil && p.loadedChunks[cp] {
+						protocol.WritePacket(p.Conn, pkt)
+					}
+					p.mu.Unlock()
+				}
+			}
+
+			log.Printf("Player %s placed a flower pot at (%d, %d, %d) — generating castle (%d blocks)", player.Username, tx, ty, tz, len(castleBlocks))
+			return
+		}
+
 		// Don't place air
 		if itemID <= 0 || itemID > 255 {
 			// Abort placement, but we MUST resync the slot so the client doesn't
