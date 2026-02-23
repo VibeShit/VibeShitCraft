@@ -622,20 +622,34 @@ func (s *Server) handlePlay(player *Player) {
 	s.spawnPlayerForOthers(player)
 	s.spawnOthersForPlayer(player)
 
-	// Add self to own tab list so the player can see themselves
-	selfListAdd := protocol.MarshalPacket(0x38, func(w *bytes.Buffer) {
-		protocol.WriteVarInt(w, 0) // Action: Add Player
-		protocol.WriteVarInt(w, 1) // Number of players
-		protocol.WriteUUID(w, player.UUID)
-		protocol.WriteString(w, player.Username)
-		protocol.WriteVarInt(w, 0)                       // Number of properties
-		protocol.WriteVarInt(w, int32(player.GameMode))  // Gamemode
-		protocol.WriteVarInt(w, 0)                       // Ping
-		protocol.WriteBool(w, false)                     // Has display name
-	})
-	player.mu.Lock()
-	protocol.WritePacket(player.Conn, selfListAdd)
-	player.mu.Unlock()
+	// Add self to own tab list so the player can see themselves.
+	// Delay the packet so the client has time to fully enter the play state;
+	// sending it immediately is ignored by the 1.8 client.
+	go func() {
+		time.Sleep(1 * time.Second)
+
+		// Verify the player is still connected before sending.
+		s.mu.RLock()
+		_, ok := s.players[player.EntityID]
+		s.mu.RUnlock()
+		if !ok {
+			return
+		}
+
+		selfListAdd := protocol.MarshalPacket(0x38, func(w *bytes.Buffer) {
+			protocol.WriteVarInt(w, 0) // Action: Add Player
+			protocol.WriteVarInt(w, 1) // Number of players
+			protocol.WriteUUID(w, player.UUID)
+			protocol.WriteString(w, player.Username)
+			protocol.WriteVarInt(w, 0)                      // Number of properties
+			protocol.WriteVarInt(w, int32(player.GameMode)) // Gamemode
+			protocol.WriteVarInt(w, 0)                      // Ping
+			protocol.WriteBool(w, false)                    // Has display name
+		})
+		player.mu.Lock()
+		protocol.WritePacket(player.Conn, selfListAdd)
+		player.mu.Unlock()
+	}()
 
 	// Spawn existing item entities for this player
 	s.spawnEntitiesForPlayer(player)
