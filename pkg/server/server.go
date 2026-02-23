@@ -1045,6 +1045,41 @@ func (s *Server) handlePlayPacket(player *Player, pkt *protocol.Packet) {
 			return
 		}
 
+		// Flower pot (390:0) triggers castle generation
+		if itemID == 390 && damage == 0 {
+			tx, ty, tz := faceOffset(x, y, z, face)
+
+			// Consume the item in survival mode
+			if player.GameMode == GameModeSurvival {
+				player.mu.Lock()
+				slotIndex := 36 + player.ActiveSlot
+				player.Inventory[slotIndex].Count--
+				if player.Inventory[slotIndex].Count <= 0 {
+					player.Inventory[slotIndex] = Slot{ItemID: -1}
+				}
+				sl := player.Inventory[slotIndex]
+				syncPkt := protocol.MarshalPacket(0x2F, func(w *bytes.Buffer) {
+					protocol.WriteByte(w, 0)
+					protocol.WriteInt16(w, int16(slotIndex))
+					protocol.WriteSlotData(w, sl.ItemID, sl.Count, sl.Damage)
+				})
+				if player.Conn != nil {
+					protocol.WritePacket(player.Conn, syncPkt)
+				}
+				player.mu.Unlock()
+			}
+
+			// Generate the castle and place all blocks
+			castleBlocks := world.GenerateCastle(int(tx), int(ty), int(tz))
+			for _, b := range castleBlocks {
+				s.world.SetBlock(b.X, b.Y, b.Z, b.State)
+				s.broadcastBlockChange(b.X, b.Y, b.Z, b.State)
+			}
+
+			log.Printf("Player %s placed a flower pot at (%d, %d, %d) — generating castle (%d blocks)", player.Username, tx, ty, tz, len(castleBlocks))
+			return
+		}
+
 		// Don't place air
 		if itemID <= 0 || itemID > 255 {
 			// Abort placement, but we MUST resync the slot so the client doesn't
