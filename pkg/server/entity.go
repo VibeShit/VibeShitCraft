@@ -111,7 +111,8 @@ func isSolidBlock(blockID uint16) bool {
 }
 
 func (s *Server) tickEntityPhysics() {
-	const gravity = 0.04
+	const itemGravity = 0.04
+	const mobGravity = 0.08
 	const drag = 0.98
 	const groundDrag = 0.58 // 0.98 * 0.6 (slipperiness) approx 0.58
 
@@ -135,8 +136,8 @@ func (s *Server) tickEntityPhysics() {
 
 		// Apply fluid buoyancy and specialized drag, else apply standard gravity
 		if inWater || inLava {
-			item.VY -= gravity * 0.5 // Reduce gravity effect
-			item.VX *= 0.5           // Extra horizontal drag from liquid
+			item.VY -= itemGravity * 0.5 // Reduce gravity effect
+			item.VX *= 0.5               // Extra horizontal drag from liquid
 			item.VZ *= 0.5
 
 			// Cap downward velocity in liquids
@@ -145,7 +146,7 @@ func (s *Server) tickEntityPhysics() {
 			}
 			// Slight float if entirely submerged (this requires checking head-level but simple approximation is VY cap)
 		} else {
-			item.VY -= gravity
+			item.VY -= itemGravity
 		}
 
 		// X movement: Attempt to move on X axis. If collision occurs, halt X velocity.
@@ -255,7 +256,7 @@ func (s *Server) tickEntityPhysics() {
 			mob.VY *= 0.8
 			mob.VZ *= 0.8
 		} else {
-			mob.VY -= gravity
+			mob.VY -= mobGravity
 		}
 
 		// X
@@ -398,13 +399,16 @@ func (s *Server) broadcastSpawnItem(item *ItemEntity) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.players {
-		p.mu.Lock()
-		if p.Conn != nil {
-			protocol.WritePacket(p.Conn, spawnObj)
-			protocol.WritePacket(p.Conn, velocityPkt)
-			protocol.WritePacket(p.Conn, metadata)
+		if s.shouldTrack(p, item.X, item.Y, item.Z) {
+			p.mu.Lock()
+			if p.Conn != nil {
+				protocol.WritePacket(p.Conn, spawnObj)
+				protocol.WritePacket(p.Conn, velocityPkt)
+				protocol.WritePacket(p.Conn, metadata)
+				p.trackedEntities[item.EntityID] = true
+			}
+			p.mu.Unlock()
 		}
-		p.mu.Unlock()
 	}
 }
 
@@ -448,11 +452,14 @@ func (s *Server) broadcastSpawnMob(mob *MobEntity) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.players {
-		p.mu.Lock()
-		if p.Conn != nil {
-			protocol.WritePacket(p.Conn, pkt)
+		if s.shouldTrack(p, mob.X, mob.Y, mob.Z) {
+			p.mu.Lock()
+			if p.Conn != nil {
+				protocol.WritePacket(p.Conn, pkt)
+				p.trackedEntities[mob.EntityID] = true
+			}
+			p.mu.Unlock()
 		}
-		p.mu.Unlock()
 	}
 }
 

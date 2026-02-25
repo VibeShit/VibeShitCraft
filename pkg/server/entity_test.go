@@ -14,7 +14,16 @@ func TestSpawnMob(t *testing.T) {
 	defer c1.Close()
 	defer c2.Close()
 
-	player := &Player{EntityID: 1, Username: "Tester", Conn: c1, GameMode: GameModeCreative}
+	player := &Player{
+		EntityID:        1,
+		Username:        "Tester",
+		Conn:            c1,
+		GameMode:        GameModeCreative,
+		X:               10.0,
+		Y:               65.0,
+		Z:               10.0,
+		trackedEntities: make(map[int32]bool),
+	}
 	s.players[player.EntityID] = player
 
 	// Read packets in background
@@ -83,7 +92,7 @@ func TestMobEntityGravity(t *testing.T) {
 	initialY := mob.Y
 
 	// Tick physics a few times
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 50; i++ {
 		s.tickEntityPhysics()
 	}
 
@@ -118,7 +127,7 @@ func TestItemEntityGravity(t *testing.T) {
 	initialY := item.Y
 
 	// Tick physics
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 50; i++ {
 		s.tickEntityPhysics()
 	}
 

@@ -656,12 +656,7 @@ func (g *Generator) GenerateInternal(chunkX, chunkZ int) ([SectionsPerChunk][Chu
 	}
 
 	// 2. Village placement
-	// Determine surface height at village center to avoid floating/buried towns
-	villageY := g.SurfaceHeight(chunkX*16+8, chunkZ*16+8)
-	if villageY < WaterLevel {
-		villageY = WaterLevel // Don't build villages underwater
-	}
-	g.villageGen.generateVillage(chunkX, chunkZ, villageY, &sections)
+	g.villageGen.generateVillage(chunkX, chunkZ, &sections)
 
 	// 3. Decorations
 	chunkInVill := g.villageGen.ChunkInVillage(chunkX, chunkZ)

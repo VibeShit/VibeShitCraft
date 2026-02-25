@@ -185,9 +185,8 @@ func divFloor(a, b int) int {
 }
 
 // generateVillage writes village structures into sections for chunk (chunkX, chunkZ).
-// surfY is the flat surface Y (the grass layer). All coordinates stay inside
-// the section array exactly like generateTrees does.
-func (v *VillageGrid) generateVillage(chunkX, chunkZ, surfY int, sections *[SectionsPerChunk][ChunkSectionSize]uint16) {
+// All coordinates stay inside the section array exactly like generateTrees does.
+func (v *VillageGrid) generateVillage(chunkX, chunkZ int, sections *[SectionsPerChunk][ChunkSectionSize]uint16) {
 	// Chunk world-space bounds
 	minWX := chunkX * 16
 	minWZ := chunkZ * 16
@@ -211,6 +210,13 @@ func (v *VillageGrid) generateVillage(chunkX, chunkZ, surfY int, sections *[Sect
 			if !ok {
 				continue
 			}
+
+			// Determine surface height at village center to avoid floating/buried towns
+			surfY := v.heightFunc(vx, vz)
+			if surfY < WaterLevel {
+				surfY = WaterLevel // Don't build villages underwater
+			}
+
 			v.buildVillage(vx, vz, surfY, chunkX, chunkZ, sections)
 		}
 	}
@@ -897,6 +903,8 @@ func doorToAnchorMarketplace(doorX, doorZ, facing int) (int, int) {
 func (v *VillageGrid) buildVillage(vx, vz, surfY, chunkX, chunkZ int, sections *[SectionsPerChunk][ChunkSectionSize]uint16) {
 	originX := chunkX * 16
 	originZ := chunkZ * 16
+	maxWX := originX + 15
+	maxWZ := originZ + 15
 
 	// Determine biome at village center for styling
 	biome := BiomeAt(v.tempNoise, v.rainNoise, vx, vz)
@@ -1019,27 +1027,29 @@ func (v *VillageGrid) buildVillage(vx, vz, surfY, chunkX, chunkZ int, sections *
 	// ------------------------------------------------------------------
 	// 2. Render Well (at center)
 	// ------------------------------------------------------------------
-	for dx := -3; dx <= 2; dx++ {
-		for dz := -3; dz <= 2; dz++ {
-			placePath(vx+dx, surfY, vz+dz, pathBlock)
-		}
-	}
-	for dx := -2; dx <= 1; dx++ {
-		for dz := -2; dz <= 1; dz++ {
-			isCorner := (dx == -2 || dx == 1) && (dz == -2 || dz == 1)
-			isInner := (dx == -1 || dx == 0) && (dz == -1 || dz == 0)
-			placeBlock(vx+dx, surfY+1, vz+dz, stoneBrick)
-			if isCorner {
-				placeBlock(vx+dx, surfY+2, vz+dz, cobbleWall)
-				placeBlock(vx+dx, surfY+3, vz+dz, cobbleWall)
-				placeBlock(vx+dx, surfY+4, vz+dz, cobbleWall)
-			} else if isInner {
-				placeBlock(vx+dx, surfY+1, vz+dz, stoneBrick)
-				placeBlock(vx+dx, surfY+2, vz+dz, waterSrc)
-			} else {
-				placeBlock(vx+dx, surfY+2, vz+dz, stoneBrick)
+	if vx+2 >= originX && vx-3 <= maxWX && vz+2 >= originZ && vz-3 <= maxWZ {
+		for dx := -3; dx <= 2; dx++ {
+			for dz := -3; dz <= 2; dz++ {
+				placePath(vx+dx, surfY, vz+dz, pathBlock)
 			}
-			placeBlock(vx+dx, surfY+5, vz+dz, slab)
+		}
+		for dx := -2; dx <= 1; dx++ {
+			for dz := -2; dz <= 1; dz++ {
+				isCorner := (dx == -2 || dx == 1) && (dz == -2 || dz == 1)
+				isInner := (dx == -1 || dx == 0) && (dz == -1 || dz == 0)
+				placeBlock(vx+dx, surfY+1, vz+dz, stoneBrick)
+				if isCorner {
+					placeBlock(vx+dx, surfY+2, vz+dz, cobbleWall)
+					placeBlock(vx+dx, surfY+3, vz+dz, cobbleWall)
+					placeBlock(vx+dx, surfY+4, vz+dz, cobbleWall)
+				} else if isInner {
+					placeBlock(vx+dx, surfY+1, vz+dz, stoneBrick)
+					placeBlock(vx+dx, surfY+2, vz+dz, waterSrc)
+				} else {
+					placeBlock(vx+dx, surfY+2, vz+dz, stoneBrick)
+				}
+				placeBlock(vx+dx, surfY+5, vz+dz, slab)
+			}
 		}
 	}
 
@@ -1066,31 +1076,36 @@ func (v *VillageGrid) buildVillage(vx, vz, surfY, chunkX, chunkZ int, sections *
 
 	var renderRoad func(seg *roadSegment)
 	renderRoad = func(seg *roadSegment) {
-		if seg.horizontal {
-			startX, endX := seg.sx, seg.ex
-			if startX > endX {
-				startX, endX = endX, startX
-			}
-			for x := startX; x <= endX; x++ {
-				d := abs(x - seg.sx)
-				wo := wobble(d, seg.wobbleSeed)
-				for w := -1; w <= 1; w++ {
-					placePath(x, surfY, seg.sz+w+wo, pathBlock)
+		startX, endX := seg.sx, seg.ex
+		if startX > endX {
+			startX, endX = endX, startX
+		}
+		startZ, endZ := seg.sz, seg.ez
+		if startZ > endZ {
+			startZ, endZ = endZ, startZ
+		}
+
+		// Render this segment only if it might overlap the chunk (+/- 4 padding for paths and wobble)
+		if !(endX+4 < originX || startX-4 > maxWX || endZ+4 < originZ || startZ-4 > maxWZ) {
+			if seg.horizontal {
+				for x := startX; x <= endX; x++ {
+					d := abs(x - seg.sx)
+					wo := wobble(d, seg.wobbleSeed)
+					for w := -1; w <= 1; w++ {
+						placePath(x, surfY, seg.sz+w+wo, pathBlock)
+					}
 				}
-			}
-		} else {
-			startZ, endZ := seg.sz, seg.ez
-			if startZ > endZ {
-				startZ, endZ = endZ, startZ
-			}
-			for z := startZ; z <= endZ; z++ {
-				d := abs(z - seg.sz)
-				wo := wobble(d, seg.wobbleSeed)
-				for w := -1; w <= 1; w++ {
-					placePath(seg.sx+w+wo, surfY, z, pathBlock)
+			} else {
+				for z := startZ; z <= endZ; z++ {
+					d := abs(z - seg.sz)
+					wo := wobble(d, seg.wobbleSeed)
+					for w := -1; w <= 1; w++ {
+						placePath(seg.sx+w+wo, surfY, z, pathBlock)
+					}
 				}
 			}
 		}
+
 		for i := range seg.children {
 			renderRoad(&seg.children[i])
 		}
@@ -1103,6 +1118,11 @@ func (v *VillageGrid) buildVillage(vx, vz, surfY, chunkX, chunkZ int, sections *
 	// 4. Place buildings at decided sites
 	// ------------------------------------------------------------------
 	for _, b := range plan.Buildings {
+		// AABB chunk cull
+		if b.Box.maxX < originX || b.Box.minX > maxWX || b.Box.maxZ < originZ || b.Box.minZ > maxWZ {
+			continue
+		}
+
 		dx, dz, fac := b.Site.doorX, b.Site.doorZ, b.Site.facing
 		switch b.Type {
 		case 1:
@@ -1151,6 +1171,11 @@ func (v *VillageGrid) buildVillage(vx, vz, surfY, chunkX, chunkZ int, sections *
 	// 5. Place farms
 	// ------------------------------------------------------------------
 	for _, f := range plan.Farms {
+		// AABB chunk cull
+		if f.Box.maxX < originX || f.Box.minX > maxWX || f.Box.maxZ < originZ || f.Box.minZ > maxWZ {
+			continue
+		}
+
 		fx, fz := f.X, f.Z
 		fh := v.cellHash(int64(fx), int64(fz), 10)
 		if fh < 7 {
@@ -1169,39 +1194,55 @@ func (v *VillageGrid) buildVillage(vx, vz, surfY, chunkX, chunkZ int, sections *
 	// ------------------------------------------------------------------
 	for i := -40; i <= 40; i += 7 {
 		for j := -40; j <= 40; j += 7 {
-			h := int64(i*131 + j*17)
-			if h%5 == 0 {
-				var fl uint16 = deco1
-				if h%10 == 0 {
-					fl = deco2
+			decX := vx + i
+			decZ := vz + j
+			if decX >= originX && decX <= maxWX && decZ >= originZ && decZ <= maxWZ {
+				h := int64(i*131 + j*17)
+				if h%5 == 0 {
+					var fl uint16 = deco1
+					if h%10 == 0 {
+						fl = deco2
+					}
+					placeDecoration(decX, surfY+1, decZ, fl)
 				}
-				placeDecoration(vx+i, surfY+1, vz+j, fl)
 			}
 		}
 	}
 	var placeLamps func(seg *roadSegment)
 	placeLamps = func(seg *roadSegment) {
-		slen := abs(seg.ex-seg.sx) + abs(seg.ez-seg.sz)
-		for dist := 8; dist <= slen-2; dist += 10 {
-			var px, pz int
-			if seg.horizontal {
-				dir := 1
-				if seg.ex < seg.sx {
-					dir = -1
-				}
-				px, pz = seg.sx+dist*dir, seg.sz+2
-			} else {
-				dir := 1
-				if seg.ez < seg.sz {
-					dir = -1
-				}
-				px, pz = seg.sx+2, seg.sz+dist*dir
-			}
-			placeDecoration(px, surfY+1, pz, fence)
-			placeDecoration(px, surfY+2, pz, fence)
-			placeDecoration(px, surfY+3, pz, fence)
-			placeDecoration(px, surfY+4, pz, torch|5)
+		startX, endX := seg.sx, seg.ex
+		if startX > endX {
+			startX, endX = endX, startX
 		}
+		startZ, endZ := seg.sz, seg.ez
+		if startZ > endZ {
+			startZ, endZ = endZ, startZ
+		}
+
+		if !(endX+4 < originX || startX-4 > maxWX || endZ+4 < originZ || startZ-4 > maxWZ) {
+			slen := abs(seg.ex-seg.sx) + abs(seg.ez-seg.sz)
+			for dist := 8; dist <= slen-2; dist += 10 {
+				var px, pz int
+				if seg.horizontal {
+					dir := 1
+					if seg.ex < seg.sx {
+						dir = -1
+					}
+					px, pz = seg.sx+dist*dir, seg.sz+2
+				} else {
+					dir := 1
+					if seg.ez < seg.sz {
+						dir = -1
+					}
+					px, pz = seg.sx+2, seg.sz+dist*dir
+				}
+				placeDecoration(px, surfY+1, pz, fence)
+				placeDecoration(px, surfY+2, pz, fence)
+				placeDecoration(px, surfY+3, pz, fence)
+				placeDecoration(px, surfY+4, pz, torch|5)
+			}
+		}
+
 		for i := range seg.children {
 			placeLamps(&seg.children[i])
 		}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"testing"
 )
 
@@ -98,5 +99,47 @@ func TestTeleportSync(t *testing.T) {
 	// teleportPlayer calls updateEntityTracking(p1)
 	if !p1.trackedEntities[2] {
 		t.Error("p1 should track p2 after teleporting closer")
+	}
+}
+
+func TestSpawnMobRegistersTracking(t *testing.T) {
+	srv := New(DefaultConfig())
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+
+	p1 := &Player{
+		EntityID:        1,
+		UUID:            [16]byte{1},
+		Username:        "SpawnObserver",
+		Conn:            c1,
+		X:               0,
+		Y:               0,
+		Z:               0,
+		trackedEntities: make(map[int32]bool),
+	}
+	srv.players[p1.EntityID] = p1
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := c2.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Spawn mob near player - should be tracked
+	srv.SpawnMob(5, 5, 5, 90)
+
+	// Spawn mob far away - should NOT be tracked
+	srv.SpawnMob(1000, 5, 1000, 90)
+
+	p1.mu.Lock()
+	tracked := len(p1.trackedEntities)
+	p1.mu.Unlock()
+
+	if tracked != 1 {
+		t.Errorf("Expected exactly 1 tracked entity (the near mob), got %d", tracked)
 	}
 }
